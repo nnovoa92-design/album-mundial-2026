@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#060d1a" />
+  <title>Álbum Mundial 2026</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: #060d1a; font-family: 'Segoe UI', system-ui, sans-serif; color: #e2e8f0; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    button:active { transform: scale(0.93); }
+    input { -webkit-appearance: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import { createElement as h, useState, useEffect, useCallback, useRef } from 'https://esm.sh/react@18';
+    import { createRoot } from 'https://esm.sh/react-dom@18/client';
+
+    const SUPABASE_URL = "https://qaeeqdfolgjobwxdpojd.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZWVxZGZvbGdqb2J3eGRwb2pkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMjUxMDQsImV4cCI6MjA5NjcwMTEwNH0.HgGiUKN38A-anizmwPZOLftFBZXsyG862ibF2LwnRAs";
+    const TABLE = "album_mundial";
+    const POLL_INTERVAL = 15000;
+
+    const TEAMS = [
+      "FWC","MEX","RSA","KOR","CZE","CAN","BIH","QAT","SUI","BRA",
+      "MAR","HAI","SCO","USA","PAR","AUS","TUR","GER","CUW","CIV",
+      "ECU","NED","JPN","SWE","TUN","BEL","EGY","IRN","NZL","ESP",
+      "CPV","KSA","URU","FRA","SEN","IRQ","NOR","ARG","ALG","AUT",
+      "JOR","POR","COD","UZB","COL","ENG","CRO","GHA","PAN",
+    ];
+
+    const TEAM_FULL = {
+      FWC:"Mundial FWC",MEX:"México",RSA:"Sudáfrica",KOR:"Corea del Sur",
+      CZE:"Rep. Checa",CAN:"Canadá",BIH:"Bosnia",QAT:"Qatar",SUI:"Suiza",
+      BRA:"Brasil",MAR:"Marruecos",HAI:"Haití",SCO:"Escocia",USA:"EE.UU.",
+      PAR:"Paraguay",AUS:"Australia",TUR:"Turquía",GER:"Alemania",CUW:"Curazao",
+      CIV:"Costa de Marfil",ECU:"Ecuador",NED:"Países Bajos",JPN:"Japón",
+      SWE:"Suecia",TUN:"Túnez",BEL:"Bélgica",EGY:"Egipto",IRN:"Irán",
+      NZL:"Nueva Zelanda",ESP:"España",CPV:"Cabo Verde",KSA:"Arabia Saudita",
+      URU:"Uruguay",FRA:"Francia",SEN:"Senegal",IRQ:"Irak",NOR:"Noruega",
+      ARG:"Argentina",ALG:"Argelia",AUT:"Austria",JOR:"Jordania",POR:"Portugal",
+      COD:"R.D. Congo",UZB:"Uzbekistán",COL:"Colombia",ENG:"Inglaterra",
+      CRO:"Croacia",GHA:"Ghana",PAN:"Panamá",
+    };
+
+    const FLAGS = {
+      FWC:"🏆",MEX:"🇲🇽",RSA:"🇿🇦",KOR:"🇰🇷",CZE:"🇨🇿",CAN:"🇨🇦",BIH:"🇧🇦",
+      QAT:"🇶🇦",SUI:"🇨🇭",BRA:"🇧🇷",MAR:"🇲🇦",HAI:"🇭🇹",SCO:"🏴󠁧󠁢󠁳󠁣󠁴󠁿",USA:"🇺🇸",
+      PAR:"🇵🇾",AUS:"🇦🇺",TUR:"🇹🇷",GER:"🇩🇪",CUW:"🇨🇼",CIV:"🇨🇮",ECU:"🇪🇨",
+      NED:"🇳🇱",JPN:"🇯🇵",SWE:"🇸🇪",TUN:"🇹🇳",BEL:"🇧🇪",EGY:"🇪🇬",IRN:"🇮🇷",
+      NZL:"🇳🇿",ESP:"🇪🇸",CPV:"🇨🇻",KSA:"🇸🇦",URU:"🇺🇾",FRA:"🇫🇷",SEN:"🇸🇳",
+      IRQ:"🇮🇶",NOR:"🇳🇴",ARG:"🇦🇷",ALG:"🇩🇿",AUT:"🇦🇹",JOR:"🇯🇴",POR:"🇵🇹",
+      COD:"🇨🇩",UZB:"🇺🇿",COL:"🇨🇴",ENG:"🏴󠁧󠁢󠁥󠁮󠁧󠁿",CRO:"🇭🇷",GHA:"🇬🇭",PAN:"🇵🇦",
+    };
+
+    function emptyAlbum() {
+      const a = {};
+      TEAMS.forEach(t => { a[t] = Array(20).fill(0); });
+      return a;
+    }
+
+    async function sbFetch(path, opts = {}) {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+          ...opts.headers,
+        },
+        ...opts,
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Supabase ${res.status}: ${txt}`);
+      }
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("json") && res.status !== 204) return res.json();
+      return null;
+    }
+
+    async function loadFromSupabase() {
+      const rows = await sbFetch(`${TABLE}?select=team,stickers`);
+      const album = emptyAlbum();
+      if (Array.isArray(rows)) {
+        rows.forEach(r => {
+          if (album[r.team] !== undefined && Array.isArray(r.stickers)) {
+            album[r.team] = r.stickers;
+          }
+        });
+      }
+      return album;
+    }
+
+    async function saveTeamToSupabase(team, stickers) {
+      await sbFetch(`${TABLE}`, {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify({ team, stickers }),
+      });
+    }
+
+    function App() {
+      const [album, setAlbum] = useState(emptyAlbum);
+      const [status, setStatus] = useState("loading");
+      const [errorMsg, setErrorMsg] = useState("");
+      const [saving, setSaving] = useState(null);
+      const [search, setSearch] = useState("");
+      const [filter, setFilter] = useState("all");
+      const [expanded, setExpanded] = useState(null);
+      const [lastSync, setLastSync] = useState(null);
+      const pendingRef = useRef({});
+
+      useEffect(() => {
+        loadFromSupabase()
+          .then(a => { setAlbum(a); setStatus("ok"); setLastSync(new Date()); })
+          .catch(e => { setStatus("error"); setErrorMsg(e.message); });
+      }, []);
+
+      useEffect(() => {
+        if (status !== "ok") return;
+        const id = setInterval(() => {
+          loadFromSupabase()
+            .then(a => { setAlbum(a); setLastSync(new Date()); })
+            .catch(() => {});
+        }, POLL_INTERVAL);
+        return () => clearInterval(id);
+      }, [status]);
+
+      const toggle = useCallback((team, idx) => {
+        setAlbum(prev => {
+          const next = { ...prev, [team]: [...prev[team]] };
+          next[team][idx] = (next[team][idx] + 1) % 3;
+          clearTimeout(pendingRef.current[team]);
+          setSaving(team);
+          const snapshot = [...next[team]];
+          pendingRef.current[team] = setTimeout(() => {
+            saveTeamToSupabase(team, snapshot)
+              .then(() => { setSaving(null); setLastSync(new Date()); })
+              .catch(() => setSaving(null));
+          }, 600);
+          return next;
+        });
+      }, []);
+
+      const resetTeam = useCallback((team) => {
+        const zeros = Array(20).fill(0);
+        setAlbum(prev => ({ ...prev, [team]: zeros }));
+        setSaving(team);
+        saveTeamToSupabase(team, zeros)
+          .then(() => { setSaving(null); setLastSync(new Date()); })
+          .catch(() => setSaving(null));
+      }, []);
+
+      const totalStickers = TEAMS.length * 20;
+      const haveCount = TEAMS.reduce((s, t) => s + album[t].filter(v => v > 0).length, 0);
+      const doubleCount = TEAMS.reduce((s, t) => s + album[t].filter(v => v === 2).length, 0);
+      const missingCount = totalStickers - haveCount;
+      const pct = Math.round((haveCount / totalStickers) * 100);
+
+      const filtered = TEAMS.filter(t => {
+        const q = search.toLowerCase();
+        if (q && !t.toLowerCase().includes(q) && !TEAM_FULL[t].toLowerCase().includes(q)) return false;
+        if (filter === "missing") return album[t].some(v => v === 0);
+        if (filter === "doubles") return album[t].some(v => v === 2);
+        return true;
+      });
+
+      const teamStats = t => {
+        const have = album[t].filter(v => v > 0).length;
+        return { have, pct: Math.round((have / 20) * 100) };
+      };
+
+      const btnStyle = s => ({
+        0: { bg:"#111827", border:"#1f2937", numColor:"#374151" },
+        1: { bg:"#052e16", border:"#16a34a", numColor:"#4ade80" },
+        2: { bg:"#431407", border:"#c2410c", numColor:"#fb923c" },
+      }[s]);
+
+      // ── LOADING ──
+      if (status === "loading") return h('div', {
+        style:{ minHeight:"100vh", background:"#060d1a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }
+      },
+        h('div', { style:{ width:40, height:40, border:"3px solid #1e3a5f", borderTopColor:"#f59e0b", borderRadius:"50%", animation:"spin 0.8s linear infinite" } }),
+        h('div', { style:{ color:"#64748b", fontSize:14 } }, "Cargando álbum..."),
+        h('style', {}, "@keyframes spin{to{transform:rotate(360deg)}}")
+      );
+
+      // ── ERROR ──
+      if (status === "error") return h('div', {
+        style:{ minHeight:"100vh", background:"#060d1a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12, padding:24 }
+      },
+        h('div', { style:{ fontSize:40 } }, "⚠️"),
+        h('div', { style:{ color:"#f87171", fontSize:16, fontWeight:700 } }, "Error de conexión"),
+        h('div', { style:{ color:"#64748b", fontSize:12, textAlign:"center", maxWidth:300 } }, errorMsg),
+        h('button', {
+          onClick: () => { setStatus("loading"); loadFromSupabase().then(a=>{setAlbum(a);setStatus("ok");setLastSync(new Date());}).catch(e=>{setStatus("error");setErrorMsg(e.message);}); },
+          style:{ marginTop:8, padding:"10px 24px", background:"#f59e0b", color:"#000", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer" }
+        }, "Reintentar")
+      );
+
+      // ── MAIN ──
+      return h('div', { style:{ minHeight:"100vh", background:"#060d1a", paddingBottom:80 } },
+        h('style', {}, `
+          @keyframes spin{to{transform:rotate(360deg)}}
+          @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+          button:active{transform:scale(0.93)}
+        `),
+
+        // HEADER
+        h('div', { style:{
+          background:"linear-gradient(180deg,#0a0f1e 0%,#060d1a 100%)",
+          borderBottom:"1px solid #1e3a5f",
+          padding:"14px 14px 10px",
+          position:"sticky", top:0, zIndex:100,
+          boxShadow:"0 4px 24px rgba(0,0,0,0.6)",
+        }},
+          // Título + %
+          h('div', { style:{ display:"flex", alignItems:"center", gap:10, marginBottom:10 } },
+            h('div', { style:{ width:42, height:42, borderRadius:10, background:"linear-gradient(135deg,#f59e0b,#ef4444)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, flexShrink:0 } }, "⚽"),
+            h('div', { style:{ flex:1 } },
+              h('div', { style:{ fontSize:11, color:"#f59e0b", fontWeight:700, letterSpacing:2, textTransform:"uppercase" } }, "Panini • FIFA"),
+              h('div', { style:{ fontSize:18, fontWeight:900, color:"#fff", lineHeight:1.1 } }, "Mundial 2026"),
+            ),
+            h('div', { style:{ textAlign:"right", flexShrink:0 } },
+              h('div', { style:{ fontSize:30, fontWeight:900, color:"#f59e0b", lineHeight:1 } }, `${pct}%`),
+              h('div', { style:{ fontSize:10, color:"#475569" } }, `${haveCount}/${totalStickers}`),
+            ),
+          ),
+
+          // Barra progreso
+          h('div', { style:{ background:"#0f172a", borderRadius:6, height:7, overflow:"hidden", marginBottom:10 } },
+            h('div', { style:{ height:"100%", width:`${pct}%`, background:"linear-gradient(90deg,#f59e0b,#ef4444)", borderRadius:6, transition:"width 0.5s ease" } })
+          ),
+
+          // Chips
+          h('div', { style:{ display:"flex", gap:6, marginBottom:10 } },
+            ...[
+              {label:"Tengo", val:haveCount, c:"#4ade80", bg:"#052e16"},
+              {label:"Faltan", val:missingCount, c:"#f87171", bg:"#1f0606"},
+              {label:"Dobles", val:doubleCount, c:"#fb923c", bg:"#1f0a02"},
+            ].map(x => h('div', { key:x.label, style:{ flex:1, background:x.bg, border:`1px solid ${x.c}22`, borderRadius:8, padding:"5px 0", textAlign:"center" } },
+              h('div', { style:{ fontSize:17, fontWeight:800, color:x.c, lineHeight:1 } }, x.val),
+              h('div', { style:{ fontSize:10, color:"#475569", marginTop:1 } }, x.label),
+            ))
+          ),
+
+          // Búsqueda
+          h('input', {
+            value: search,
+            onInput: e => setSearch(e.target.value),
+            placeholder: "🔍  Buscar selección...",
+            style:{ width:"100%", background:"#0f172a", border:"1px solid #1e3a5f", borderRadius:9, padding:"8px 12px", color:"#e2e8f0", fontSize:14, outline:"none", marginBottom:8 }
+          }),
+
+          // Filtros
+          h('div', { style:{ display:"flex", gap:5 } },
+            ...[{k:"all",l:"Todas"},{k:"missing",l:"Con faltantes"},{k:"doubles",l:"Con dobles"}].map(f =>
+              h('button', {
+                key: f.k,
+                onClick: () => setFilter(f.k),
+                style:{
+                  flex:1, padding:"6px 0", borderRadius:8, fontSize:11, fontWeight:700,
+                  border: filter===f.k ? "1px solid #f59e0b" : "1px solid #1e3a5f",
+                  background: filter===f.k ? "#f59e0b18" : "#0f172a",
+                  color: filter===f.k ? "#f59e0b" : "#475569",
+                  cursor:"pointer",
+                }
+              }, f.l)
+            )
+          ),
+
+          // Sync
+          h('div', { style:{ display:"flex", alignItems:"center", gap:5, marginTop:7, justifyContent:"flex-end" } },
+            saving
+              ? [h('div', { key:"dot", style:{ width:6, height:6, borderRadius:"50%", background:"#f59e0b", animation:"pulse 1s infinite" } }), h('span', { key:"txt", style:{ fontSize:10, color:"#f59e0b" } }, "Guardando...")]
+              : [h('div', { key:"dot", style:{ width:6, height:6, borderRadius:"50%", background:"#4ade80" } }), h('span', { key:"txt", style:{ fontSize:10, color:"#374151" } }, lastSync ? `Sync ${lastSync.toLocaleTimeString("es-CL",{hour:"2-digit",minute:"2-digit"})}` : "Conectado")]
+          ),
+        ),
+
+        // LISTA EQUIPOS
+        h('div', { style:{ padding:"10px 12px 0" } },
+          filtered.length === 0 && h('div', { style:{ textAlign:"center", color:"#1e3a5f", padding:48, fontSize:14 } }, "Sin resultados"),
+
+          ...filtered.map(team => {
+            const { have, pct: tp } = teamStats(team);
+            const isOpen = expanded === team;
+            const complete = have === 20;
+            const isSaving = saving === team;
+
+            return h('div', {
+              key: team,
+              style:{ marginBottom:7, background:"#0a1628", border:`1px solid ${complete ? "#16a34a44" : "#1e3a5f"}`, borderRadius:12, overflow:"hidden" }
+            },
+              // Cabecera equipo
+              h('button', {
+                onClick: () => setExpanded(isOpen ? null : team),
+                style:{ width:"100%", background:"none", border:"none", padding:"10px 12px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, textAlign:"left" }
+              },
+                h('span', { style:{ fontSize:20, lineHeight:1, flexShrink:0 } }, FLAGS[team]),
+                h('div', { style:{ flex:1, minWidth:0 } },
+                  h('div', { style:{ display:"flex", alignItems:"center", gap:6 } },
+                    h('span', { style:{ fontSize:15, fontWeight:800, color:"#e2e8f0", letterSpacing:0.5 } }, team),
+                    h('span', { style:{ fontSize:10, color:"#334155" } }, TEAM_FULL[team]),
+                    complete && h('span', { style:{ fontSize:10, color:"#4ade80", marginLeft:"auto", flexShrink:0 } }, "✓ Completo"),
+                    isSaving && h('span', { style:{ fontSize:9, color:"#f59e0b", marginLeft:"auto", animation:"pulse 1s infinite" } }, "guardando…"),
+                  ),
+                  h('div', { style:{ display:"flex", alignItems:"center", gap:6, marginTop:3 } },
+                    h('div', { style:{ flex:1, background:"#0f172a", borderRadius:3, height:4, overflow:"hidden" } },
+                      h('div', { style:{ height:"100%", width:`${tp}%`, background: complete ? "#16a34a" : "#2563eb", borderRadius:3, transition:"width 0.3s" } })
+                    ),
+                    h('span', { style:{ fontSize:10, color:"#334155", flexShrink:0 } }, `${have}/20`),
+                  ),
+                ),
+                h('span', { style:{ color:"#1e3a5f", fontSize:12, transition:"transform 0.2s", transform: isOpen ? "rotate(180deg)":"none", flexShrink:0 } }, "▼"),
+              ),
+
+              // Panel láminas
+              isOpen && h('div', { style:{ padding:"2px 12px 12px" } },
+                h('div', { style:{ display:"grid", gridTemplateColumns:"repeat(10,1fr)", gap:4, marginBottom:10 } },
+                  ...album[team].map((st, idx) => {
+                    const bs = btnStyle(st);
+                    return h('button', {
+                      key: idx,
+                      onClick: () => toggle(team, idx),
+                      style:{
+                        aspectRatio:"1/1", background:bs.bg, border:`2px solid ${bs.border}`,
+                        borderRadius:7, display:"flex", alignItems:"center", justifyContent:"center",
+                        cursor:"pointer", padding:0, minWidth:0, transition:"all 0.12s",
+                      }
+                    },
+                      h('span', { style:{ fontSize: st===2 ? 8 : 10, fontWeight:800, color:bs.numColor, lineHeight:1, userSelect:"none" } },
+                        st === 2 ? "★" : idx + 1
+                      )
+                    );
+                  })
+                ),
+                h('div', { style:{ display:"flex", alignItems:"center", justifyContent:"space-between" } },
+                  h('div', { style:{ display:"flex", gap:10, fontSize:10 } },
+                    h('span', { style:{ color:"#374151" } }, "■ Falta"),
+                    h('span', { style:{ color:"#16a34a" } }, "■ Tengo"),
+                    h('span', { style:{ color:"#c2410c" } }, "★ Doble"),
+                  ),
+                  h('button', {
+                    onClick: () => { if(window.confirm(`¿Resetear ${team}?`)) resetTeam(team); },
+                    style:{ background:"none", border:"1px solid #1e3a5f", color:"#334155", borderRadius:6, padding:"3px 9px", fontSize:10, cursor:"pointer" }
+                  }, "Reset"),
+                ),
+              ),
+            );
+          }),
+
+          h('div', { style:{ textAlign:"center", padding:"20px 16px 0", fontSize:10, color:"#1e3a5f" } },
+            "Toca una lámina · Falta → Tengo → Doble · Sincroniza automáticamente"
+          ),
+        ),
+      );
+    }
+
+    createRoot(document.getElementById('root')).render(h(App));
+  </script>
+</body>
+</html>
