@@ -100,6 +100,15 @@
     }
 
     async function saveTeamToSupabase(team, stickers) {
+  await sbFetch(TABLE, {
+    method: "POST",
+    headers: { 
+      Prefer: "resolution=merge-duplicates,return=minimal",
+      "on-conflict": "team"
+    },
+    body: JSON.stringify({ team, stickers }),
+  });
+}
       // Intenta PATCH (actualizar si existe)
       const res = await fetch(`${SUPABASE_URL}/rest/v1/${TABLE}?team=eq.${encodeURIComponent(team)}`, {
         method: "PATCH",
