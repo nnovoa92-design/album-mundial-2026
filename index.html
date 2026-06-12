@@ -20,35 +20,93 @@
 <script type="module">
 import { createElement as h, useState, useEffect, useCallback, useRef } from 'https://esm.sh/react@18';
 import { createRoot } from 'https://esm.sh/react-dom@18/client';
+import { jsPDF } from 'https://esm.sh/jspdf@2.5.1';
 
 const URL_ = "https://qaeeqdfolgjobwxdpojd.supabase.co";
 const KEY_ = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFhZWVxZGZvbGdqb2J3eGRwb2pkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExMjUxMDQsImV4cCI6MjA5NjcwMTEwNH0.HgGiUKN38A-anizmwPZOLftFBZXsyG862ibF2LwnRAs";
 const TABLE = "album_mundial";
+const PIN_TABLE = "album_pins";
+const STORAGE_KEY = "album_mundial_owner";
 
-const TEAMS = ["FWC","MEX","RSA","KOR","CZE","CAN","BIH","QAT","SUI","BRA","MAR","HAI","SCO","USA","PAR","AUS","TUR","GER","CUW","CIV","ECU","NED","JPN","SWE","TUN","BEL","EGY","IRN","NZL","ESP","CPV","KSA","URU","FRA","SEN","IRQ","NOR","ARG","ALG","AUT","JOR","POR","COD","UZB","COL","ENG","CRO","GHA","PAN"];
+// FWC tiene 20 laminas: 00, 1..19
+const FWC_COUNT = 20;
+const FWC_LABELS = ["00","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16","17","18","19"];
 
-const FULL = {FWC:"Mundial FWC",MEX:"Mexico",RSA:"Sudafrica",KOR:"Corea del Sur",CZE:"Rep. Checa",CAN:"Canada",BIH:"Bosnia",QAT:"Qatar",SUI:"Suiza",BRA:"Brasil",MAR:"Marruecos",HAI:"Haiti",SCO:"Escocia",USA:"EE.UU.",PAR:"Paraguay",AUS:"Australia",TUR:"Turquia",GER:"Alemania",CUW:"Curazao",CIV:"Costa de Marfil",ECU:"Ecuador",NED:"Paises Bajos",JPN:"Japon",SWE:"Suecia",TUN:"Tunez",BEL:"Belgica",EGY:"Egipto",IRN:"Iran",NZL:"Nueva Zelanda",ESP:"Espana",CPV:"Cabo Verde",KSA:"Arabia Saudita",URU:"Uruguay",FRA:"Francia",SEN:"Senegal",IRQ:"Irak",NOR:"Noruega",ARG:"Argentina",ALG:"Argelia",AUT:"Austria",JOR:"Jordania",POR:"Portugal",COD:"R.D. Congo",UZB:"Uzbekistan",COL:"Colombia",ENG:"Inglaterra",CRO:"Croacia",GHA:"Ghana",PAN:"Panama"};
+// CC (Coca-Cola) tiene 14 laminas: 1..14
+const CC_COUNT = 14;
 
-const FLAGS = {FWC:"trophy",MEX:"MX",RSA:"ZA",KOR:"KR",CZE:"CZ",CAN:"CA",BIH:"BA",QAT:"QA",SUI:"CH",BRA:"BR",MAR:"MA",HAI:"HT",SCO:"SCO",USA:"US",PAR:"PY",AUS:"AU",TUR:"TR",GER:"DE",CUW:"CW",CIV:"CI",ECU:"EC",NED:"NL",JPN:"JP",SWE:"SE",TUN:"TN",BEL:"BE",EGY:"EG",IRN:"IR",NZL:"NZ",ESP:"ES",CPV:"CV",KSA:"SA",URU:"UY",FRA:"FR",SEN:"SN",IRQ:"IQ",NOR:"NO",ARG:"AR",ALG:"DZ",AUT:"AT",JOR:"JO",POR:"PT",COD:"CD",UZB:"UZ",COL:"CO",ENG:"ENG",CRO:"HR",GHA:"GH",PAN:"PA"};
+const TEAMS = ["FWC","MEX","RSA","KOR","CZE","CAN","BIH","QAT","SUI","BRA","MAR","HAI","SCO","USA","PAR","AUS","TUR","GER","CUW","CIV","ECU","NED","JPN","SWE","TUN","BEL","EGY","IRN","NZL","ESP","CPV","KSA","URU","FRA","SEN","IRQ","NOR","ARG","ALG","AUT","JOR","POR","COD","UZB","COL","ENG","CRO","GHA","PAN","CC"];
+
+const FULL = {FWC:"Mundial FWC",MEX:"Mexico",RSA:"Sudafrica",KOR:"Corea del Sur",CZE:"Rep. Checa",CAN:"Canada",BIH:"Bosnia",QAT:"Qatar",SUI:"Suiza",BRA:"Brasil",MAR:"Marruecos",HAI:"Haiti",SCO:"Escocia",USA:"EE.UU.",PAR:"Paraguay",AUS:"Australia",TUR:"Turquia",GER:"Alemania",CUW:"Curazao",CIV:"Costa de Marfil",ECU:"Ecuador",NED:"Paises Bajos",JPN:"Japon",SWE:"Suecia",TUN:"Tunez",BEL:"Belgica",EGY:"Egipto",IRN:"Iran",NZL:"Nueva Zelanda",ESP:"Espana",CPV:"Cabo Verde",KSA:"Arabia Saudita",URU:"Uruguay",FRA:"Francia",SEN:"Senegal",IRQ:"Irak",NOR:"Noruega",ARG:"Argentina",ALG:"Argelia",AUT:"Austria",JOR:"Jordania",POR:"Portugal",COD:"R.D. Congo",UZB:"Uzbekistan",COL:"Colombia",ENG:"Inglaterra",CRO:"Croacia",GHA:"Ghana",PAN:"Panama",CC:"Coca-Cola"};
+
+function teamSize(team) {
+  if (team === "FWC") return FWC_COUNT;
+  if (team === "CC") return CC_COUNT;
+  return 20;
+}
 
 function emptyAlbum() {
   const a = {};
-  TEAMS.forEach(t => { a[t] = Array(20).fill(0); });
+  TEAMS.forEach(t => { a[t] = Array(teamSize(t)).fill(0); });
   return a;
 }
 
-async function loadAll() {
-  const res = await fetch(`${URL_}/rest/v1/${TABLE}?select=team,stickers`, {
+function rowKey(owner, team) {
+  return owner + "::" + team;
+}
+
+// ── PIN helpers ──
+function isAlphanumeric(s) {
+  return /^[a-zA-Z0-9]+$/.test(s);
+}
+
+async function getPin(owner) {
+  const res = await fetch(`${URL_}/rest/v1/${PIN_TABLE}?owner=eq.${encodeURIComponent(owner)}&select=pin`, {
     headers: { apikey: KEY_, Authorization: `Bearer ${KEY_}` }
   });
-  if (!res.ok) throw new Error(`Load error ${res.status}`);
+  if (!res.ok) throw new Error("Error al verificar clave: " + res.status);
+  const rows = await res.json();
+  return rows.length > 0 ? rows[0].pin : null;
+}
+
+async function setPin(owner, pin) {
+  const res = await fetch(`${URL_}/rest/v1/${PIN_TABLE}`, {
+    method: "POST",
+    headers: {
+      apikey: KEY_,
+      Authorization: `Bearer ${KEY_}`,
+      "Content-Type": "application/json",
+      "Prefer": "resolution=merge-duplicates,return=minimal"
+    },
+    body: JSON.stringify({ owner, pin })
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt);
+  }
+}
+
+// ── Album data helpers ──
+async function loadAll(owner) {
+  const prefix = encodeURIComponent(owner + "::");
+  const res = await fetch(`${URL_}/rest/v1/${TABLE}?team=like.${prefix}%2A&select=team,stickers`, {
+    headers: { apikey: KEY_, Authorization: `Bearer ${KEY_}` }
+  });
+  if (!res.ok) throw new Error("Error de carga: " + res.status);
   const rows = await res.json();
   const album = emptyAlbum();
-  rows.forEach(r => { if (album[r.team]) album[r.team] = r.stickers; });
+  rows.forEach(r => {
+    const team = r.team.split("::")[1];
+    if (album[team]) {
+      const size = teamSize(team);
+      const arr = r.stickers || [];
+      album[team] = Array.from({length: size}, (_, i) => arr[i] || 0);
+    }
+  });
   return album;
 }
 
-async function saveTeam(team, stickers) {
+async function saveTeam(owner, team, stickers) {
   const res = await fetch(`${URL_}/rest/v1/${TABLE}`, {
     method: "POST",
     headers: {
@@ -57,7 +115,7 @@ async function saveTeam(team, stickers) {
       "Content-Type": "application/json",
       "Prefer": "resolution=merge-duplicates,return=minimal"
     },
-    body: JSON.stringify({ team, stickers })
+    body: JSON.stringify({ team: rowKey(owner, team), stickers })
   });
   if (!res.ok) {
     const txt = await res.text();
@@ -65,7 +123,272 @@ async function saveTeam(team, stickers) {
   }
 }
 
-function App() {
+// ── Generacion de PDF ──
+function labelForTeam(team, idx) {
+  if (team === "FWC") return FWC_LABELS[idx];
+  return String(idx + 1);
+}
+
+function generatePDF(owner, album, mode) {
+  // mode: "all" | "missing" | "doubles"
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 10;
+  const cellSize = 7.2;
+  const gap = 1;
+  const cols = 10;
+
+  const titles = {
+    all: "Album completo",
+    missing: "Laminas faltantes",
+    doubles: "Laminas dobles (para canjear)"
+  };
+
+  // Filtrar equipos segun modo
+  let teams = TEAMS;
+  if (mode === "missing") teams = TEAMS.filter(t => album[t].some(v => v === 0));
+  if (mode === "doubles") teams = TEAMS.filter(t => album[t].some(v => v === 2));
+
+  if (teams.length === 0) {
+    doc.setFontSize(16);
+    doc.text("No hay " + (mode === "missing" ? "laminas faltantes" : "laminas dobles") + " :)", pageW/2, pageH/2, { align: "center" });
+    doc.save("mundial2026_" + owner + "_" + mode + ".pdf");
+    return;
+  }
+
+  let y = margin;
+
+  // Header
+  doc.setFontSize(16);
+  doc.setFont(undefined, "bold");
+  doc.text("Mundial 2026 - " + titles[mode], margin, y + 5);
+  doc.setFontSize(10);
+  doc.setFont(undefined, "normal");
+  doc.text("Album de " + owner + "  -  " + new Date().toLocaleDateString("es-CL"), margin, y + 11);
+  y += 18;
+
+  doc.setFontSize(7);
+
+  teams.forEach(team => {
+    const size = teamSize(team);
+    const teamCols = size === 14 ? 7 : 10;
+    const rowsNeeded = Math.ceil(size / teamCols);
+    const blockH = 6 + rowsNeeded * (cellSize + gap);
+
+    // Salto de pagina si no entra
+    if (y + blockH > pageH - margin) {
+      doc.addPage();
+      y = margin;
+    }
+
+    // Nombre del equipo
+    doc.setFont(undefined, "bold");
+    doc.setFontSize(8);
+    doc.text(team + " - " + FULL[team], margin, y + 3);
+    doc.setFont(undefined, "normal");
+    y += 5;
+
+    // Grilla de laminas
+    for (let i = 0; i < size; i++) {
+      const col = i % teamCols;
+      const row = Math.floor(i / teamCols);
+      const x = margin + col * (cellSize + gap);
+      const cy = y + row * (cellSize + gap);
+      const status = album[team][i];
+
+      // Para "missing": resaltar solo las que faltan (status===0)
+      // Para "doubles": resaltar solo las dobles (status===2)
+      // Para "all": colorear todo segun estado
+      let fillR, fillG, fillB, textColor, drawBorder;
+      if (mode === "missing") {
+        if (status === 0) { fillR=255; fillG=237; fillB=213; textColor=[180,60,0]; drawBorder=[230,120,30]; }
+        else { fillR=245; fillG=245; fillB=245; textColor=[200,200,200]; drawBorder=[220,220,220]; }
+      } else if (mode === "doubles") {
+        if (status === 2) { fillR=255; fillG=237; fillB=213; textColor=[180,60,0]; drawBorder=[230,120,30]; }
+        else { fillR=245; fillG=245; fillB=245; textColor=[200,200,200]; drawBorder=[220,220,220]; }
+      } else {
+        if (status === 1) { fillR=220; fillG=245; fillB=225; textColor=[20,120,40]; drawBorder=[100,180,110]; }
+        else if (status === 2) { fillR=255; fillG=230; fillB=210; textColor=[200,90,0]; drawBorder=[235,140,60]; }
+        else { fillR=255; fillG=255; fillB=255; textColor=[80,80,80]; drawBorder=[180,180,180]; }
+      }
+
+      doc.setFillColor(fillR, fillG, fillB);
+      doc.setDrawColor(drawBorder[0], drawBorder[1], drawBorder[2]);
+      doc.rect(x, cy, cellSize, cellSize, "FD");
+
+      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+      const label = labelForTeam(team, i) + (status === 2 ? "*" : "");
+      doc.setFontSize(7);
+      doc.text(label, x + cellSize/2, cy + cellSize/2 + 1.2, { align: "center" });
+    }
+
+    doc.setTextColor(0,0,0);
+    y += rowsNeeded * (cellSize + gap) + 3;
+  });
+
+  // Leyenda al final
+  if (y + 10 < pageH - margin) {
+    y += 2;
+    doc.setFontSize(7);
+    if (mode === "all") {
+      doc.setFillColor(220,245,225); doc.rect(margin, y, 4, 4, "F");
+      doc.text("Tengo", margin + 6, y + 3);
+      doc.setFillColor(255,230,210); doc.rect(margin + 25, y, 4, 4, "F");
+      doc.text("Doble (*)", margin + 31, y + 3);
+      doc.setFillColor(255,255,255); doc.setDrawColor(180,180,180); doc.rect(margin + 55, y, 4, 4, "FD");
+      doc.text("Falta", margin + 61, y + 3);
+    } else if (mode === "missing") {
+      doc.setFillColor(255,237,213); doc.setDrawColor(230,120,30); doc.rect(margin, y, 4, 4, "FD");
+      doc.text("Falta esta lamina", margin + 6, y + 3);
+    } else {
+      doc.setFillColor(255,237,213); doc.setDrawColor(230,120,30); doc.rect(margin, y, 4, 4, "FD");
+      doc.text("Tengo doble - para canjear", margin + 6, y + 3);
+    }
+  }
+
+  doc.save("mundial2026_" + owner + "_" + mode + ".pdf");
+}
+
+
+function Welcome({ onStart }) {
+  const [name, setName] = useState("");
+  const [pin, setPin] = useState("");
+  const [existing, setExisting] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null); // owner seleccionado de la lista
+  const [enterPin, setEnterPin] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    fetch(`${URL_}/rest/v1/${TABLE}?select=team`, {
+      headers: { apikey: KEY_, Authorization: `Bearer ${KEY_}` }
+    })
+    .then(r => r.json())
+    .then(rows => {
+      const owners = [...new Set(rows.map(r => r.team.split("::")[0]).filter(Boolean))];
+      setExisting(owners);
+      setLoading(false);
+    })
+    .catch(() => setLoading(false));
+  }, []);
+
+  // Crear nuevo album con PIN
+  async function handleNew() {
+    const n = name.trim();
+    const p = pin.trim();
+    setError("");
+    if (!n) { setError("Ingresa un nombre"); return; }
+    if (!p) { setError("Ingresa una clave"); return; }
+    if (!isAlphanumeric(p)) { setError("La clave debe ser alfanumerica (solo letras y numeros)"); return; }
+    if (existing.includes(n)) { setError("Ese nombre ya existe. Selecciona el album de la lista para entrar."); return; }
+
+    setBusy(true);
+    try {
+      await setPin(n, p);
+      localStorage.setItem(STORAGE_KEY, n);
+      onStart(n);
+    } catch (e) {
+      setError("Error al crear: " + e.message);
+    }
+    setBusy(false);
+  }
+
+  // Entrar a album existente con PIN
+  async function handleEnter() {
+    setError("");
+    const p = enterPin.trim();
+    if (!p) { setError("Ingresa la clave"); return; }
+
+    setBusy(true);
+    try {
+      const realPin = await getPin(selected);
+      if (realPin === null) {
+        // album viejo sin PIN registrado: lo registramos ahora con el que ingreso
+        await setPin(selected, p);
+        localStorage.setItem(STORAGE_KEY, selected);
+        onStart(selected);
+      } else if (realPin === p) {
+        localStorage.setItem(STORAGE_KEY, selected);
+        onStart(selected);
+      } else {
+        setError("Clave incorrecta");
+      }
+    } catch (e) {
+      setError("Error: " + e.message);
+    }
+    setBusy(false);
+  }
+
+  // ── Vista: pidiendo PIN para album seleccionado ──
+  if (selected) {
+    return h('div', { style: { minHeight:"100vh", background:"#060d1a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24 } },
+      h('div', { style: { width:64, height:64, borderRadius:16, background:"linear-gradient(135deg,#f59e0b,#ef4444)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, marginBottom:20 } }, "=?"),
+      h('div', { style: { fontSize:20, fontWeight:900, color:"#fff", marginBottom:4 } }, "Album de " + selected),
+      h('div', { style: { fontSize:12, color:"#64748b", marginBottom:24 } }, "Ingresa la clave para entrar"),
+      h('div', { style: { width:"100%", maxWidth:300 } },
+        h('input', {
+          type: "password",
+          value: enterPin,
+          onInput: e => setEnterPin(e.target.value),
+          onKeyDown: e => e.key === "Enter" && handleEnter(),
+          placeholder: "Clave",
+          autoFocus: true,
+          style: { width:"100%", background:"#0f172a", border:"1px solid #1e3a5f", borderRadius:10, padding:"12px 16px", color:"#e2e8f0", fontSize:15, outline:"none", marginBottom:10, letterSpacing:2 }
+        }),
+        error && h('div', { style: { color:"#f87171", fontSize:12, marginBottom:10, textAlign:"center" } }, error),
+        h('button', { onClick:handleEnter, disabled:busy, style: { width:"100%", padding:"12px 0", background:"linear-gradient(90deg,#f59e0b,#ef4444)", border:"none", borderRadius:10, color:"#000", fontSize:15, fontWeight:800, cursor:"pointer", marginBottom:8, opacity:busy?0.6:1 } }, busy?"...":"Entrar"),
+        h('button', { onClick:()=>{ setSelected(null); setEnterPin(""); setError(""); }, style: { width:"100%", padding:"10px 0", background:"none", border:"1px solid #1e3a5f", borderRadius:10, color:"#64748b", fontSize:13, cursor:"pointer" } }, "Volver")
+      )
+    );
+  }
+
+  // ── Vista: seleccion / creacion ──
+  return h('div', { style: { minHeight:"100vh", background:"#060d1a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24 } },
+    h('div', { style: { width:64, height:64, borderRadius:16, background:"linear-gradient(135deg,#f59e0b,#ef4444)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, marginBottom:20 } }, "=?"),
+    h('div', { style: { fontSize:11, color:"#f59e0b", fontWeight:700, letterSpacing:2, marginBottom:4 } }, "PANINI - FIFA"),
+    h('div', { style: { fontSize:24, fontWeight:900, color:"#fff", marginBottom:8 } }, "Mundial 2026"),
+    h('div', { style: { fontSize:13, color:"#475569", marginBottom:32, textAlign:"center" } }, "Album de figuritas"),
+
+    !loading && existing.length > 0 && h('div', { style: { width:"100%", maxWidth:320, marginBottom:24 } },
+      h('div', { style: { fontSize:12, color:"#64748b", marginBottom:10, textAlign:"center" } }, "Abrir album existente:"),
+      h('div', { style: { display:"flex", flexDirection:"column", gap:8 } },
+        ...existing.map(owner =>
+          h('button', { key:owner, onClick:()=>{ setSelected(owner); setError(""); }, style: { padding:"12px 16px", background:"#0a1628", border:"1px solid #1e3a5f", borderRadius:10, color:"#e2e8f0", fontSize:15, fontWeight:700, cursor:"pointer", textAlign:"left", display:"flex", justifyContent:"space-between", alignItems:"center" } },
+            h('span', {}, "Album de " + owner),
+            h('span', { style: { fontSize:11, color:"#475569" } }, "lock")
+          )
+        )
+      )
+    ),
+
+    h('div', { style: { width:"100%", maxWidth:320 } },
+      existing.length > 0 && h('div', { style: { fontSize:12, color:"#64748b", marginBottom:10, textAlign:"center" } }, "O crear nuevo album:"),
+      h('input', {
+        value: name,
+        onInput: e => setName(e.target.value),
+        placeholder: "Nombre (ej: Nicolas, Pedro...)",
+        style: { width:"100%", background:"#0f172a", border:"1px solid #1e3a5f", borderRadius:10, padding:"12px 16px", color:"#e2e8f0", fontSize:15, outline:"none", marginBottom:8 }
+      }),
+      h('input', {
+        type: "password",
+        value: pin,
+        onInput: e => setPin(e.target.value),
+        onKeyDown: e => e.key === "Enter" && handleNew(),
+        placeholder: "Crea una clave (letras y numeros)",
+        style: { width:"100%", background:"#0f172a", border:"1px solid #1e3a5f", borderRadius:10, padding:"12px 16px", color:"#e2e8f0", fontSize:15, outline:"none", marginBottom:10, letterSpacing:2 }
+      }),
+      error && h('div', { style: { color:"#f87171", fontSize:12, marginBottom:10, textAlign:"center" } }, error),
+      h('button', { onClick:handleNew, disabled: !name.trim() || !pin.trim() || busy, style: { width:"100%", padding:"12px 0", background: (name.trim() && pin.trim())?"linear-gradient(90deg,#f59e0b,#ef4444)":"#1e293b", border:"none", borderRadius:10, color: (name.trim() && pin.trim())?"#000":"#475569", fontSize:15, fontWeight:800, cursor: (name.trim() && pin.trim())?"pointer":"default", transition:"all 0.2s", opacity:busy?0.6:1 } },
+        busy ? "..." : "Crear album"
+      )
+    )
+  );
+}
+
+// ── App principal ──
+function Album({ owner, onLogout }) {
   const [album, setAlbum] = useState(emptyAlbum);
   const [status, setStatus] = useState("loading");
   const [errMsg, setErrMsg] = useState("");
@@ -78,20 +401,20 @@ function App() {
 
   function load() {
     setStatus("loading");
-    loadAll()
+    loadAll(owner)
       .then(a => { setAlbum(a); setStatus("ok"); setLastSync(new Date()); })
       .catch(e => { setStatus("error"); setErrMsg(e.message); });
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [owner]);
 
   useEffect(() => {
     if (status !== "ok") return;
     const id = setInterval(() => {
-      loadAll().then(a => { setAlbum(a); setLastSync(new Date()); }).catch(() => {});
+      loadAll(owner).then(a => { setAlbum(a); setLastSync(new Date()); }).catch(() => {});
     }, 15000);
     return () => clearInterval(id);
-  }, [status]);
+  }, [status, owner]);
 
   const toggle = useCallback((team, idx) => {
     setAlbum(prev => {
@@ -101,24 +424,24 @@ function App() {
       clearTimeout(timers.current[team]);
       setSaving(team);
       timers.current[team] = setTimeout(() => {
-        saveTeam(team, snap)
+        saveTeam(owner, team, snap)
           .then(() => { setSaving(null); setLastSync(new Date()); })
-          .catch(e => { console.error("Save error:", e); setSaving(null); });
+          .catch(e => { console.error(e); setSaving(null); });
       }, 600);
       return next;
     });
-  }, []);
+  }, [owner]);
 
   const resetTeam = useCallback((team) => {
-    const zeros = Array(20).fill(0);
+    const zeros = Array(teamSize(team)).fill(0);
     setAlbum(prev => ({ ...prev, [team]: zeros }));
     setSaving(team);
-    saveTeam(team, zeros)
+    saveTeam(owner, team, zeros)
       .then(() => { setSaving(null); setLastSync(new Date()); })
       .catch(() => setSaving(null));
-  }, []);
+  }, [owner]);
 
-  const total = TEAMS.length * 20;
+  const total = TEAMS.reduce((s, t) => s + teamSize(t), 0);
   const have = TEAMS.reduce((s, t) => s + album[t].filter(v => v > 0).length, 0);
   const doubles = TEAMS.reduce((s, t) => s + album[t].filter(v => v === 2).length, 0);
   const missing = total - have;
@@ -133,8 +456,9 @@ function App() {
   });
 
   const tStats = t => {
-    const h = album[t].filter(v => v > 0).length;
-    return { h, pct: Math.round((h / 20) * 100) };
+    const size = teamSize(t);
+    const hv = album[t].filter(v => v > 0).length;
+    return { hv, size, pct: Math.round((hv / size) * 100) };
   };
 
   const bs = s => ({
@@ -143,19 +467,24 @@ function App() {
     2: { bg:"#431407", border:"#c2410c", col:"#fb923c" }
   }[s]);
 
-  if (status === "loading") return h('div', {
-    style: { minHeight:"100vh", background:"#060d1a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 }
-  },
+  function labelFor(team, idx) {
+    if (team === "FWC") return FWC_LABELS[idx];
+    return String(idx + 1);
+  }
+
+  function gridCols(team) {
+    return teamSize(team) === 14 ? 7 : 10;
+  }
+
+  if (status === "loading") return h('div', { style: { minHeight:"100vh", background:"#060d1a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:16 } },
     h('div', { style: { width:40, height:40, border:"3px solid #1e3a5f", borderTopColor:"#f59e0b", borderRadius:"50%", animation:"spin 0.8s linear infinite" } }),
-    h('div', { style: { color:"#64748b", fontSize:14 } }, "Cargando album...")
+    h('div', { style: { color:"#64748b", fontSize:14 } }, "Cargando album de " + owner + "...")
   );
 
-  if (status === "error") return h('div', {
-    style: { minHeight:"100vh", background:"#060d1a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12, padding:24 }
-  },
-    h('div', { style: { fontSize:36 } }, "Error de conexion"),
+  if (status === "error") return h('div', { style: { minHeight:"100vh", background:"#060d1a", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:12, padding:24 } },
+    h('div', { style: { fontSize:36 } }, "Error"),
     h('div', { style: { color:"#f87171", fontSize:12, textAlign:"center", maxWidth:300 } }, errMsg),
-    h('button', { onClick: load, style: { marginTop:8, padding:"10px 24px", background:"#f59e0b", color:"#000", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer" } }, "Reintentar")
+    h('button', { onClick:load, style: { marginTop:8, padding:"10px 24px", background:"#f59e0b", color:"#000", border:"none", borderRadius:10, fontWeight:700, fontSize:14, cursor:"pointer" } }, "Reintentar")
   );
 
   return h('div', { style: { minHeight:"100vh", background:"#060d1a", paddingBottom:80 } },
@@ -166,11 +495,12 @@ function App() {
         h('div', { style: { width:42, height:42, borderRadius:10, background:"linear-gradient(135deg,#f59e0b,#ef4444)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 } }, "=?"),
         h('div', { style: { flex:1 } },
           h('div', { style: { fontSize:11, color:"#f59e0b", fontWeight:700, letterSpacing:2 } }, "PANINI - FIFA"),
-          h('div', { style: { fontSize:18, fontWeight:900, color:"#fff" } }, "Mundial 2026")
+          h('div', { style: { fontSize:16, fontWeight:900, color:"#fff", lineHeight:1.2 } }, "Mundial 2026"),
+          h('div', { style: { fontSize:11, color:"#64748b" } }, "Album de " + owner)
         ),
-        h('div', { style: { textAlign:"right" } },
-          h('div', { style: { fontSize:30, fontWeight:900, color:"#f59e0b", lineHeight:1 } }, pct + "%"),
-          h('div', { style: { fontSize:10, color:"#475569" } }, have + "/" + total)
+        h('div', { style: { display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4 } },
+          h('div', { style: { fontSize:28, fontWeight:900, color:"#f59e0b", lineHeight:1 } }, pct + "%"),
+          h('button', { onClick:()=>{ localStorage.removeItem(STORAGE_KEY); onLogout(); }, style: { fontSize:10, color:"#475569", background:"none", border:"1px solid #1e3a5f", borderRadius:6, padding:"2px 8px", cursor:"pointer" } }, "Cambiar")
         )
       ),
 
@@ -191,7 +521,20 @@ function App() {
 
       h('div', { style: { display:"flex", gap:5 } },
         ...[{k:"all",l:"Todas"},{k:"missing",l:"Con faltantes"},{k:"doubles",l:"Con dobles"}].map(f =>
-          h('button', { key:f.k, onClick:()=>setFilter(f.k), style: { flex:1, padding:"6px 0", borderRadius:8, fontSize:11, fontWeight:700, border: filter===f.k?"1px solid #f59e0b":"1px solid #1e3a5f", background: filter===f.k?"#f59e0b18":"#0f172a", color: filter===f.k?"#f59e0b":"#475569", cursor:"pointer" } }, f.l)
+          h('button', { key:f.k, onClick:()=>setFilter(f.k), style: { flex:1, padding:"6px 0", borderRadius:8, fontSize:11, fontWeight:700, border:filter===f.k?"1px solid #f59e0b":"1px solid #1e3a5f", background:filter===f.k?"#f59e0b18":"#0f172a", color:filter===f.k?"#f59e0b":"#475569", cursor:"pointer" } }, f.l)
+        )
+      ),
+
+      h('div', { style: { display:"flex", gap:5, marginTop:6 } },
+        ...[
+          {k:"all", l:"PDF Todas"},
+          {k:"missing", l:"PDF Faltantes"},
+          {k:"doubles", l:"PDF Dobles"}
+        ].map(p =>
+          h('button', { key:p.k, onClick:()=>generatePDF(owner, album, p.k), style: { flex:1, padding:"6px 0", borderRadius:8, fontSize:10, fontWeight:700, border:"1px solid #2563eb44", background:"#1e3a5f22", color:"#60a5fa", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:4 } },
+            h('span', {}, "PDF"),
+            h('span', { style:{fontWeight:400, color:"#475569"} }, p.l.replace("PDF ",""))
+          )
         )
       ),
 
@@ -204,10 +547,11 @@ function App() {
 
     h('div', { style: { padding:"10px 12px 0" } },
       ...filtered.map(team => {
-        const {h:th, pct:tp} = tStats(team);
+        const {hv, size, pct:tp} = tStats(team);
         const isOpen = expanded === team;
-        const complete = th === 20;
+        const complete = hv === size;
         const isSaving = saving === team;
+        const cols = gridCols(team);
 
         return h('div', { key:team, style: { marginBottom:7, background:"#0a1628", border:"1px solid "+(complete?"#16a34a44":"#1e3a5f"), borderRadius:12, overflow:"hidden" } },
 
@@ -223,18 +567,18 @@ function App() {
                 h('div', { style: { flex:1, background:"#0f172a", borderRadius:3, height:4, overflow:"hidden" } },
                   h('div', { style: { height:"100%", width:tp+"%", background:complete?"#16a34a":"#2563eb", borderRadius:3 } })
                 ),
-                h('span', { style: { fontSize:10, color:"#334155" } }, th+"/20")
+                h('span', { style: { fontSize:10, color:"#334155" } }, hv+"/"+size)
               )
             ),
             h('span', { style: { color:"#1e3a5f", fontSize:12, transform:isOpen?"rotate(180deg)":"none", transition:"0.2s" } }, "v")
           ),
 
           isOpen && h('div', { style: { padding:"2px 12px 12px" } },
-            h('div', { style: { display:"grid", gridTemplateColumns:"repeat(10,1fr)", gap:4, marginBottom:10 } },
+            h('div', { style: { display:"grid", gridTemplateColumns:"repeat("+cols+",1fr)", gap:4, marginBottom:10 } },
               ...album[team].map((st, idx) => {
                 const b = bs(st);
                 return h('button', { key:idx, onClick:()=>toggle(team,idx), style: { aspectRatio:"1/1", background:b.bg, border:"2px solid "+b.border, borderRadius:7, display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", padding:0, minWidth:0 } },
-                  h('span', { style: { fontSize:st===2?8:10, fontWeight:800, color:b.col, lineHeight:1, userSelect:"none" } }, st===2?"*":idx+1)
+                  h('span', { style: { fontSize:st===2?8:10, fontWeight:800, color:b.col, lineHeight:1, userSelect:"none" } }, st===2?"*":labelFor(team, idx))
                 );
               })
             ),
@@ -253,7 +597,15 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(h(App));
+// ── Root ──
+function Root() {
+  const [owner, setOwner] = useState(() => localStorage.getItem(STORAGE_KEY) || null);
+
+  if (!owner) return h(Welcome, { onStart: setOwner });
+  return h(Album, { owner, onLogout: () => setOwner(null) });
+}
+
+createRoot(document.getElementById('root')).render(h(Root));
 </script>
 </body>
 </html>
